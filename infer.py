@@ -48,7 +48,7 @@ if __name__ == '__main__':
     parser.add_argument('--damp', dest='damp', action='store_const', const=False, help="Perform attack suppression instead of boosting.")
     parser.add_argument('--nonquad', dest='dont_perform_quad', action='store_const', const=True, help="Don't perform quadratic noise supression.")
     parser.add_argument('--amul', dest='att_mul', help="TS attack scaling.", default=1.5, type=float)
-    parser.add_argument('--mbatch', dest='mini_batches', help="Mini batches count.", default=4096, type=int)
+    parser.add_argument('--mb', dest='mini_batches', help="Mini batches count.", default=4096, type=int)
     parser.add_argument('--init', dest='init_lvl', help="Output level of non-shaped audio.", default=0.5, type=float)
     parser.add_argument('--scale', dest='scale', help="Attack boost strength.", default=2, type=float)
     
@@ -101,19 +101,19 @@ if __name__ == '__main__':
     for idx in range(len(p_features)):
 
         if do_verbose:
-            print(f'[ channel {idx}] Performing model inference...')
+            print(f'[ channel {idx} ] Performing model inference...')
         
         with torch.no_grad():
             result = net.infer(p_features[idx], device, minibatch=mini_batches)
 
         if dont_perform_quad is None:
             if do_verbose:
-                print(f'[ channel {idx}] Performing x^2 for result...')
+                print(f'[ channel {idx} ] Performing x^2 for result...')
 
             result = result ** 2
 
         if do_verbose:
-            print(f'[ channel {idx}] Doing SPL-like shaping for inferenced probability...')
+            print(f'[ channel {idx} ] Doing SPL-like shaping for inferenced probability...')
 
         filtered_rel = single_pole(result, p_audio.samplerate, hop_size, 0, rel_time)
         filtered_att = single_pole(result, p_audio.samplerate, hop_size, att_time, rel_time) * att_mul
@@ -121,17 +121,17 @@ if __name__ == '__main__':
         filtered_diff = (filtered_rel - filtered_att).clip(min=0) # filtered_rel
 
         if do_verbose:
-            print(f'[ channel {idx}] Shifting inference result 5 frames forward...')
+            print(f'[ channel {idx} ] Shifting inference result 5 frames forward...')
 
         ka_inference = np.concatenate([np.zeros(5), filtered_diff])
 
         if do_verbose:
-            print(f'[ channel {idx}] Upsampling shaped probability to audio sample rate...')
+            print(f'[ channel {idx} ] Upsampling shaped probability to audio sample rate...')
 
         upsampled_fft = resample(ka_inference, orig_sr=p_audio.samplerate / hop_size, target_sr=p_audio.samplerate)[250:]
 
         if do_verbose:
-            print(f'[ channel {idx}] Making sure shapes are OK, and applying shaping curve to signal...')
+            print(f'[ channel {idx} ] Making sure shapes are OK, and applying shaping curve to signal...')
 
         scaled = scale * to_shape1D(upsampled_fft, p_audio.data.shape)
         multiplier = (init_level - scaled if perform_damping else init_level + scaled)
