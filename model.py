@@ -101,7 +101,7 @@ class convNet(nn.Module):
         """
         Args:
             songs: the list of song
-            minibatch: minibatch value
+            minibatch: minibatch size
             epoch: number of train 
             device: cpu / gpu
             soundlen: width of one train data's image
@@ -186,7 +186,7 @@ class convNet(nn.Module):
         """
         Args:
             songs: the list of song
-            minibatch: minibatch value
+            minibatch: minibatch size
             epoch: number of train 
             device: cpu / gpu
             soundlen: width of one train data's image
@@ -236,7 +236,7 @@ class convNet(nn.Module):
         optimizer = optim.SGD(self.parameters(), lr=0.02)
         criterion = nn.MSELoss()
         running_loss = 0
-        val_loss = 0
+        val_loss = None
 
         for i in range(epoch):
             for song in songs:
@@ -249,30 +249,28 @@ class convNet(nn.Module):
                     optimizer.step()
                     running_loss += loss.data.item()
 
-            with open(log, 'a') as f:
-                print("epoch: %.d running_loss: %.10f " % (i+1, running_loss), file=f)
-
-            print("epoch: %.d running_loss: %.10f" % (i+1, running_loss))
-            
-            running_loss = 0    
-
             if val_song:
-                inference = torch.from_numpy(self.infer(val_song.feats, device, minibatch=512)).to(device)
+                inference = torch.from_numpy(self.infer(val_song.feats, device, minibatch=512, silent=True)).to(device)
                 target = torch.from_numpy(val_song.answer[:-soundlen]).float().to(device)
                 loss = criterion(inference.squeeze(), target)
                 val_loss = loss.data.item()
 
-                with open(log, 'a') as f:
-                    print("val_loss: %.10f " % (val_loss), file=f)
+            epoch_string = f"[ epoch {i+1} ] running_loss: {running_loss:.10f}; {f'val_loss: {val_loss:.10f}' if val_loss else ''}"
+            
+            print(epoch_string)
+            with open(log, 'a') as f:
+                print(epoch_string, file=f)
+            
+            running_loss = 0            
 
         torch.save(self.state_dict(), save_place)
 
 
-    def infer(self, feats, device, minibatch=1):
+    def infer(self, feats, device, minibatch=1, silent=False):
 
         with torch.no_grad():
             inference = None
-            for x in tqdm(self.infer_data_builder(feats, minibatch=minibatch), total=feats.shape[2]//minibatch):
+            for x in tqdm(self.infer_data_builder(feats, minibatch=minibatch), total=feats.shape[2]//minibatch, disable=silent):
                 output = self(x.to(device), minibatch=x.shape[0])
                 if inference is not None:
                     inference = np.concatenate((inference, output.cpu().numpy().reshape(-1)))

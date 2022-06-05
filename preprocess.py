@@ -46,8 +46,8 @@ if __name__ == "__main__":
     parser.add_argument('-i', dest='input_path', help="Input song(s) path. Allows wildcard, so /* will use multiple directories for making dataset", required=True)
     parser.add_argument('-o', dest='output_path', help="Resulting pickle path.", required=True)
     parser.add_argument('-v', dest='verbose', action='store_const', const=True, help="Verbose mode.")
-    parser.add_argument('--nhop', dest='hop_size', help="Hop size to beused for model training.", default=512, type=int)
-    parser.add_argument('--nfft', dest='nfft', help="First FFT size for features.", default=1024, type=int)
+    parser.add_argument('--nhop', dest='hop_size', help="Hop size to be used for feature creation.", default=512, type=int)
+    parser.add_argument('--nfft', dest='nfft', help="First FFT size for making magnitude spectrum on feature creation.", default=1024, type=int)
 
     args = parser.parse_args()
 

@@ -33,6 +33,9 @@ plot.py
 
 # extra data
 new_data/
+*.pkl
+*.pt
+*_log.txt
 
 # ignore
 # .gitattributes
