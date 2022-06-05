@@ -45,9 +45,9 @@ if __name__ == '__main__':
     parser.add_argument('--nfft', dest='nfft', help="First FFT size for making magnitude spectrum.", default=1024, type=int)
 
     parser.add_argument('--cuda', dest='cuda', action='store_const', const=True, help="Use CUDA.")
-    parser.add_argument('--damp', dest='damp', action='store_const', const=False, help="Perform attack suppression instead of boosting.")
+    parser.add_argument('--damp', dest='damp', action='store_const', const=True, help="Perform attack suppression instead of boosting.")
     parser.add_argument('--nonquad', dest='dont_perform_quad', action='store_const', const=True, help="Don't perform quadratic noise supression.")
-    parser.add_argument('--amul', dest='att_mul', help="TS attack scaling.", default=1.5, type=float)
+    parser.add_argument('--amul', dest='att_mul', help="TS attack scaling.", default=1.5, type=float) # works best with 2.5 or more
     parser.add_argument('--mb', dest='mini_batches', help="Mini batches count.", default=4096, type=int)
     parser.add_argument('--init', dest='init_lvl', help="Output level of non-shaped audio.", default=0.5, type=float)
     parser.add_argument('--scale', dest='scale', help="Attack boost strength.", default=2, type=float)
