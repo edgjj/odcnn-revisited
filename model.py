@@ -39,7 +39,7 @@ class convNet(nn.Module):
         x = F.dropout(F.relu(self.fc1(x)), training=istraining)
         x = F.dropout(F.relu(self.fc2(x)), training=istraining)
 
-        return F.sigmoid(self.fc3(x))
+        return torch.sigmoid(self.fc3(x))
 
 
     def train_data_builder(self, feats, answer, major_note_index, samplerate, soundlen=15, minibatch=1, split=0.2):
@@ -96,6 +96,91 @@ class convNet(nn.Module):
         if len(x) != 0:
             yield (torch.from_numpy(np.array(x)).float())
 
+
+    def train_no_donka(self, songs, minibatch, epoch, device, soundlen=15, val_song=None, save_place='./models/model.pth', log='./log/log.txt'):
+        """
+        Args:
+            songs: the list of song
+            minibatch: minibatch value
+            epoch: number of train 
+            device: cpu / gpu
+            soundlen: width of one train data's image
+            val_song: validation song, if you wanna validation while training, give a path of validation song data.
+            save_place: save place path
+            log: log place path
+            don-ka: don(1) or ka(2) or both(0), usually, firstly, train don, then, train ka.
+        """
+
+        for song in songs:
+            
+            timing = song.timestamp[:, 0]
+            sound  = song.timestamp[:, 1]
+            song.answer = np.zeros((song.feats.shape[2]))
+
+            if don_ka == 0:
+                song.major_note_index = np.rint(timing[np.where(sound != 0)] * song.samplerate/512).astype(np.int32)
+            else:
+                song.major_note_index = np.rint(timing[np.where(sound == don_ka)] * song.samplerate/512).astype(np.int32)
+                song.minor_note_index = np.rint(timing[np.where(sound == 3-don_ka)] * song.samplerate/512).astype(np.int32)
+            
+            song.major_note_index = np.delete(song.major_note_index, np.where(song.major_note_index >= song.feats.shape[2]))
+            song.minor_note_index = np.delete(song.minor_note_index, np.where(song.minor_note_index >= song.feats.shape[2]))
+            song.answer[song.major_note_index] = 1
+            song.answer[song.minor_note_index] = 0.26
+            song.answer = milden(song.answer)
+
+        if val_song:
+
+            timing = val_song.timestamp[:, 0]
+            sound = val_song.timestamp[:, 1]
+            val_song.answer = np.zeros((val_song.feats.shape[2]))
+
+            if don_ka == 0:
+                val_song.major_note_index = np.rint(timing[np.where(sound != 0)] * val_song.samplerate/512).astype(np.int32)
+            else:
+                val_song.major_note_index = np.rint(timing[np.where(sound == don_ka)] * val_song.samplerate/512).astype(np.int32)
+                val_song.minor_note_index = np.rint(timing[np.where(sound == 3-don_ka)] * val_song.samplerate/512).astype(np.int32)
+
+            val_song.major_note_index = np.delete(val_song.major_note_index, np.where(val_song.major_note_index >= val_song.feats.shape[2]))
+            val_song.minor_note_index = np.delete(val_song.minor_note_index, np.where(val_song.minor_note_index >= val_song.feats.shape[2]))
+            val_song.answer[val_song.major_note_index] = 1
+            val_song.answer[val_song.minor_note_index] = 0.26
+            val_song.answer = milden(val_song.answer)
+
+        # training
+        optimizer = optim.SGD(self.parameters(), lr=0.02)
+        criterion = nn.MSELoss()
+        running_loss = 0
+        val_loss = 0
+
+        for i in range(epoch):
+            for song in songs:
+                for X, y in self.train_data_builder(song.feats, song.answer, song.major_note_index, song.samplerate, soundlen, minibatch, split=0.2):
+                    optimizer.zero_grad()
+                    output = self(X.to(device), istraining=True, minibatch=minibatch)
+                    target = y.to(device)
+                    loss = criterion(output.squeeze(), target)
+                    loss.backward()
+                    optimizer.step()
+                    running_loss += loss.data.item()
+
+            with open(log, 'a') as f:
+                print("epoch: %.d running_loss: %.10f " % (i+1, running_loss), file=f)
+
+            print("epoch: %.d running_loss: %.10f" % (i+1, running_loss))
+            
+            running_loss = 0    
+
+            if val_song:
+                inference = torch.from_numpy(self.infer(val_song.feats, device, minibatch=512)).to(device)
+                target = torch.from_numpy(val_song.answer[:-soundlen]).float().to(device)
+                loss = criterion(inference.squeeze(), target)
+                val_loss = loss.data.item()
+
+                with open(log, 'a') as f:
+                    print("val_loss: %.10f " % (val_loss), file=f)
+
+        torch.save(self.state_dict(), save_place)
 
     def train(self, songs, minibatch, epoch, device, soundlen=15, val_song=None, save_place='./models/model.pth', log='./log/log.txt', don_ka=0):
         """
@@ -195,24 +280,3 @@ class convNet(nn.Module):
                     inference = output.cpu().numpy().reshape(-1)
             
             return np.array(inference).reshape(-1)
-
-
-if __name__ == '__main__':
-
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    net = convNet()
-    net = net.to(device)
-           
-    with open('./data/pickles/train_data.pickle', mode='rb') as f:
-        songs = pickle.load(f)
-
-    minibatch = 128
-    soundlen = 15
-    epoch = 100
-
-    if sys.argv[1] == 'don':
-        net.train(songs=songs, minibatch=minibatch, val_song=None, epoch=epoch, device=device, soundlen=soundlen, save_place='./models/don_model.pth', log='./data/log/don.txt', don_ka=1)
-    
-    if sys.argv[1] == 'ka':
-        net.train(songs=songs, minibatch=minibatch, val_song=None, epoch=epoch, device=device, soundlen=soundlen, save_place='./models/ka_model.pth', log='./data/log/ka.txt', don_ka=2)
-

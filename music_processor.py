@@ -1,19 +1,10 @@
 import soundfile as sf
 import matplotlib.pyplot as plt
 import numpy as np
-import os
-from glob import glob
 from scipy import signal
 from scipy.fftpack import fft
 from librosa.filters import mel
-from librosa.display import specshow
-from librosa import stft
-from librosa.effects import pitch_shift
-import pickle
-import sys
-from numba import jit, prange
-from sklearn.preprocessing import normalize
-
+from numba import jit
 
 class Audio:
     """
@@ -47,7 +38,7 @@ class Audio:
 
     def plotaudio(self, start_t, stop_t):
 
-        plt.plot(np.linspace(start_t, stop_t, stop_t-start_t), self.data[start_t:stop_t, 0])
+        plt.plot(np.linspace(start_t, stop_t, stop_t-start_t), self.data[start_t:stop_t])
         plt.show()
 
 
@@ -136,48 +127,6 @@ class Audio:
                     self.timestamp = np.array(self.timestamp)
                     break
 
-
-    def synthesize(self, diff=True, don="./data/don.wav", ka="./data/ka.wav"):
-        
-        donsound = sf.read(don)[0]
-        donsound = (donsound[:, 0] + donsound[:, 1]) / 2
-        kasound = sf.read(ka)[0]
-        kasound = (kasound[:, 0] + kasound[:, 1]) / 2
-        donlen = len(donsound)
-        kalen = len(kasound)
-        
-        if diff is True:
-            for stamp in self.timestamp:
-                timing = int(stamp[0]*self.samplerate)
-                try:
-                    if stamp[1] in (1, 3, 5, 6, 7):
-                        self.data[timing:timing+donlen] += donsound
-                    elif stamp[1] in (2, 4):
-                        self.data[timing:timing+kalen] += kasound
-                except ValueError:
-                    pass
-
-        elif diff == 'don':
-            if isinstance(self.timestamp[0], tuple):
-                for stamp in self.timestamp:
-                    if stamp*self.samplerate+donlen < self.data.shape[0]:
-                        self.data[int(stamp[0]*self.samplerate):int(stamp[0]*self.samplerate)+donlen] += donsound
-            else:
-                for stamp in self.timestamp:
-                    if stamp*self.samplerate+donlen < self.data.shape[0]:
-                        self.data[int(stamp*self.samplerate):int(stamp*self.samplerate)+donlen] += donsound
-        
-        elif diff == 'ka':
-            if isinstance(self.timestamp[0], tuple):
-                for stamp in self.timestamp:
-                    if stamp*self.samplerate+kalen < self.data.shape[0]:
-                        self.data[int(stamp[0]*self.samplerate):int(stamp[0]*self.samplerate)+kalen] += kasound
-            else:
-                for stamp in self.timestamp:
-                    if stamp*self.samplerate+kalen < self.data.shape[0]:
-                        self.data[int(stamp*self.samplerate):int(stamp*self.samplerate)+kalen] += kasound
-
-
 def make_frame(data, nhop, nfft):
     """
     helping function for fftandmelscale.
@@ -188,9 +137,7 @@ def make_frame(data, nhop, nfft):
     framedata = np.concatenate((data, np.zeros(nfft)))  # zero padding
     return np.array([framedata[i*nhop:i*nhop+nfft] for i in range(length//nhop)])  
 
-
-@jit
-def fft_and_melscale(song, nhop=512, nffts=[1024, 2048, 4096], mel_nband=80, mel_freqlo=27.5, mel_freqhi=16000.0, include_zero_cross=False):
+def fft_and_melscale(song: Audio, nhop=512, nffts=[1024, 2048, 4096], mel_nband=80, mel_freqlo=27.5, mel_freqhi=16000.0, include_zero_cross=False):
     """
     fft and melscale method.
     fft: nfft = [1024, 2048, 4096]; サンプルの切り取る長さを変えながらデータからnp.arrayを抽出して高速フーリエ変換を行う．
@@ -200,10 +147,9 @@ def fft_and_melscale(song, nhop=512, nffts=[1024, 2048, 4096], mel_nband=80, mel
     feat_channels = []
     
     for nfft in nffts:
-        
-        feats = []
+
         window = signal.blackmanharris(nfft)
-        filt = mel(song.samplerate, nfft, mel_nband, mel_freqlo, mel_freqhi)
+        filt = mel(sr=song.samplerate, n_fft=nfft, n_mels=mel_nband, fmin=mel_freqlo, fmax=mel_freqhi)
         
         # get normal frame
         frame = make_frame(song.data, nhop, nfft)
@@ -223,13 +169,37 @@ def fft_and_melscale(song, nhop=512, nffts=[1024, 2048, 4096], mel_nband=80, mel
     
     return np.array(feat_channels)
 
+def fft_and_melscale_mc(song: Audio, nhop=512, nffts=[1024, 2048, 4096], mel_nband=80, mel_freqlo=27.5, mel_freqhi=16000.0):
+    """
+    FFT and melscale method.
+    Basically, a paralellized for multiple channels version.
+    """
 
-@jit(parallel=True)
-def multi_fft_and_melscale(songs, nhop=512, nffts=[1024, 2048, 4096], mel_nband=80, mel_freqlo=27.5, mel_freqhi=16000.0, include_zero_cross=False):
-    
-    for i in prange(len(songs)):
-        songs[i].feats = fft_and_melscale(songs[i], nhop, nffts, mel_nband, mel_freqlo, mel_freqhi)
+    ret = []
+    num_channels = 1 + (len(song.data.shape) >= 2)
 
+    for c in range (num_channels):
+        feat_channels = []
+        for nfft in nffts:
+
+            window = signal.blackmanharris(nfft)
+            filt = mel(sr=song.samplerate, n_fft=nfft, n_mels=mel_nband, fmin=mel_freqlo, fmax=mel_freqhi)
+            
+            # get normal frame
+            frame = make_frame(song.data.T[c], nhop, nfft)
+            # print(frame.shape)
+
+            # melscaling
+            processedframe = fft(window*frame)[:, :nfft//2+1]
+            processedframe = np.dot(filt, np.transpose(np.abs(processedframe)**2)) # matmul of Mel filter-bank and transposed power spectrum
+            processedframe = 20*np.log10(processedframe+0.1) # dB scale
+            # print(processedframe.shape)
+
+            feat_channels.append(processedframe)
+
+        ret.append(np.array(feat_channels))
+
+    return ret
 
 def milden(data):
     """put smaller value(0.25) to plus minus 1 frame."""
@@ -249,7 +219,6 @@ def milden(data):
                 data[i+1] = 0.1
     
     return data
-
 
 def smooth(x, window_len=11, window='hanning'):
     
@@ -275,112 +244,3 @@ def smooth(x, window_len=11, window='hanning'):
     y = np.convolve(w/w.sum(), s, mode='valid')
     
     return y
-
-
-def music_for_listening(serv, synthesize=True, difficulty=0):
-
-    song = Audio(glob(serv+"/*.ogg")[0])
-    if synthesize:
-        song.import_tja(glob(serv+"/*.tja")[-1], difficulty=difficulty)
-        song.synthesize()
-    # plt.plot(song.data[1000:1512, 0])
-    # plt.show()
-    song.save("./data/saved_music.wav")
-
-
-def music_for_validation(serv, deletemusic=True, verbose=False, difficulty=1):
-
-    song = Audio(glob(serv+"/*.ogg")[0], stereo=False)
-    song.import_tja(glob(serv+"/*.tja")[-1], difficulty=difficulty)
-    song.feats = fft_and_melscale(song, nhop=512, nffts=[1024, 2048, 4096], mel_nband=80, mel_freqlo=27.5, mel_freqhi=16000.0, include_zero_cross=False)
-
-    if deletemusic:
-        song.data = None
-    with open('./data/pickles/val_data.pickle', mode='wb') as f:
-        pickle.dump(song, f)
-
-
-def music_for_train(serv, deletemusic=True, verbose=False, difficulty=0, diff=False, nhop=512, nffts=[1024, 2048, 4096], mel_nband=80, mel_freqlo=27.5, mel_freqhi=16000.0, include_zero_cross=False):
-    
-    songplaces = glob(serv)
-    songs = []
-    
-    for songplace in songplaces:
-        
-        if verbose:
-            print(songplace)
-        
-        song = Audio(glob(songplace+"/*.ogg")[0])
-        song.import_tja(glob(songplace+"/*.tja")[-1], difficulty=difficulty, diff=True)
-        song.data = (song.data[:, 0]+song.data[:, 1])/2
-        songs.append(song)
-
-    multi_fft_and_melscale(songs, nhop, nffts, mel_nband, mel_freqlo, mel_freqhi, include_zero_cross=include_zero_cross)
-    
-    if deletemusic:
-        for song in songs:
-            song.data = None
-    
-    with open('./data/pickles/train_data.pickle', mode='wb') as f:
-        pickle.dump(songs, f)
-
-def music_for_train_reduced(serv, deletemusic=True, verbose=False, difficulty=0, diff=False, nhop=512, nffts=[1024, 2048, 4096], mel_nband=80, mel_freqlo=27.5, mel_freqhi=16000.0, include_zero_cross=False):
-    
-    songplaces = glob(serv)
-    songs = []
-    
-    for songplace in songplaces:
-        
-        if verbose:
-            print(songplace)
-        
-        song = Audio(glob(songplace+"/*.ogg")[0])
-        song.import_tja(glob(songplace+"/*.tja")[-1], difficulty=difficulty, diff=True)
-        song.data = (song.data[:, 0]+song.data[:, 1])/2
-        songs.append(song)
-
-    multi_fft_and_melscale(songs, nhop, nffts, mel_nband, mel_freqlo, mel_freqhi, include_zero_cross=include_zero_cross)
-    
-    if deletemusic:
-        for song in songs:
-            song.data = None
-    
-    with open('./data/pickles/train_reduced.pickle', mode='wb') as f:
-        pickle.dump(songs, f)
-
-
-def music_for_test(serv, deletemusic=True, verbose=False):
-
-    song = Audio(glob(serv+"/*.ogg")[0], stereo=False)
-    # song.import_tja(glob(serv+"/*.tja")[-1])
-    song.feats = fft_and_melscale(song, include_zero_cross=False)
-    with open('./data/pickles/test_data.pickle', mode='wb') as f:
-        pickle.dump(song, f)
-
-
-if __name__ == "__main__":
-
-    if sys.argv[1] == 'train':
-        print("preparing all train data processing...")
-        serv = "./data/train/*"
-        music_for_train(serv, verbose=True, difficulty=0, diff=True)
-        print("all train data processing done!")    
-
-    if sys.argv[1] == 'test':
-        print("test data proccesing...")
-        serv = "./data/test/"
-        music_for_test(serv)
-        print("test data processing done!")
-
-    if sys.argv[1] == 'val':
-        print("validation data processing...")
-        serv = "./data/validation"
-        music_for_validation(serv)
-        print("done!")
-
-    if sys.argv[1] == 'reduced':
-        serv = './data/train_reduced/*'
-        music_for_train_reduced(serv, verbose=True, difficulty=0, diff=True)
-        
-
-

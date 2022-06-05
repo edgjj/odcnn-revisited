@@ -31,5 +31,8 @@ files/img/
 files/demo/
 plot.py
 
+# extra data
+new_data/
+
 # ignore
 # .gitattributes
