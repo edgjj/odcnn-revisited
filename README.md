@@ -41,7 +41,7 @@ This version aims to make model usage more flexible.
 - Install requirements
 
 ```
-$ pip install -r reqirement.txt
+$ pip install -r requirement.txt
 ```
 
 - Prepare audio dataset.
