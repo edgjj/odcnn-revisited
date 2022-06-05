@@ -38,7 +38,7 @@ if __name__ == '__main__':
     parser.add_argument('-i', dest='input_path', help="Input path.")
     parser.add_argument('-o', dest='output_path', help="Output path.")
     parser.add_argument('-a', dest='att_time', help="TS attack time.", default=120, type=float)
-    parser.add_argument('-r', dest='rel_time', help="TS release time.", default=10, type=float)
+    parser.add_argument('-r', dest='rel_time', help="TS release time.", default=10, type=float) # may be too tight, 40+ is more musical
     parser.add_argument('-v', dest='verbose', action='store_const', const=True, help="Verbose mode.")
 
     parser.add_argument('--nhop', dest='hop_size', help="Hop size used for making magnitude spectrum.", default=512, type=int)
