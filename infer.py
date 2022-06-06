@@ -40,11 +40,13 @@ if __name__ == '__main__':
     parser.add_argument('-a', dest='att_time', help="TS attack time.", default=120, type=float)
     parser.add_argument('-r', dest='rel_time', help="TS release time.", default=10, type=float) # may be too tight, 40+ is more musical
     parser.add_argument('-v', dest='verbose', action='store_const', const=True, help="Verbose mode.")
+    parser.add_argument('-t', '--thres', dest='threshold', help="Probability threshold.", default=0.33, type=float)
 
     parser.add_argument('--nhop', dest='hop_size', help="Hop size used for making magnitude spectrum.", default=512, type=int)
     parser.add_argument('--nfft', dest='nfft', help="First FFT size for making magnitude spectrum.", default=1024, type=int)
 
     parser.add_argument('--cuda', dest='cuda', action='store_const', const=True, help="Use CUDA.")
+    #parser.add_argument('--link', dest='link', action='store_const', const=True, help="Channel linking of shaper.")
     parser.add_argument('--damp', dest='damp', action='store_const', const=True, help="Perform attack suppression instead of boosting.")
     parser.add_argument('--nonquad', dest='dont_perform_quad', action='store_const', const=True, help="Don't perform quadratic noise supression.")
     parser.add_argument('--amul', dest='att_mul', help="TS attack scaling.", default=1.5, type=float) # works best with 2.5 or more
@@ -69,6 +71,8 @@ if __name__ == '__main__':
     att_mul = args.att_mul
     scale = args.scale
     init_level = args.init_lvl
+    probability_thres = args.threshold
+    # channel_link = args.link # we should do inferencing independent of filter calculation then, so leave this for future
 
     perform_damping = args.damp
     can_use_cuda = torch.cuda.is_available() and args.cuda
@@ -105,6 +109,11 @@ if __name__ == '__main__':
         
         with torch.no_grad():
             result = net.infer(p_features[idx], device, minibatch=mini_batches)
+        
+        if do_verbose:
+            print(f'[ channel {idx} ] Doing probability thresholding [ threshold: {probability_thres} ]...')
+
+        result[result < probability_thres] = 0.0
 
         if dont_perform_quad is None:
             if do_verbose:
@@ -128,7 +137,7 @@ if __name__ == '__main__':
         if do_verbose:
             print(f'[ channel {idx} ] Upsampling shaped probability to audio sample rate...')
 
-        upsampled_fft = resample(ka_inference, orig_sr=p_audio.samplerate / hop_size, target_sr=p_audio.samplerate)[250:]
+        upsampled_fft = resample(ka_inference, orig_sr=p_audio.samplerate / hop_size, target_sr=p_audio.samplerate)[360:]
 
         if do_verbose:
             print(f'[ channel {idx} ] Making sure shapes are OK, and applying shaping curve to signal...')

@@ -33,6 +33,7 @@ plot.py
 
 # extra data
 new_data/
+playground/
 *.pkl
 *_log.txt
 
