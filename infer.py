@@ -89,7 +89,7 @@ if __name__ == '__main__':
     if do_verbose:
         print(f'Loading model weights from {model_path}...')
 
-    net.load_state_dict(torch.load(model_path))
+    net.load_state_dict(torch.load(model_path, map_location=device))
     net = net.to(device)
 
     if do_verbose:
